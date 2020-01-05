@@ -5,50 +5,28 @@
         http://iss.moex.com/iss/reference/
 """
 
-import json
-from urllib.error import HTTPError
-
-import requests
-from requests import ReadTimeout
-from user_agent import generate_user_agent
-
-from ..repeater import repeater
+from typing import Union
+from backend.scrappers.base import BaseApiClient
 
 
 HOST = 'https://iss.moex.com/'
-HEADERS = {'User-Agent': generate_user_agent(device_type="desktop", os=('mac', 'linux'))}
 
 
-@repeater()
-def get_url_data(url: str, params=None) -> str:
-    """Download page from url"""
-    try:
-        html = requests.get(url, params=params, headers=HEADERS, timeout=30)
-        print(f'{html.status_code}: {html.url}')
-    except HTTPError as e:
-        print(f'Error on url {url}: {e}')
-    except ReadTimeout as e:
-        print(f'Error on url {url}: {e}')
-    else:
-        return html.text
-
-
-def shares_endpoint(trade_date: str, resp_format: str = 'json', start: int = 0) -> dict:
-    """Get shares from api"""
-    fmt = dict(
+def get_fmt(resp_format: str = 'json'):
+    """Return expected response format"""
+    return dict(
         json='.json',
         xml='.xml',
         csv='.csv',
         html='',
     ).get(resp_format, '')
 
-    url = f'{HOST}iss/history/engines/stock/markets/shares/boards/tqbr/securities{fmt}'
 
-    params = dict(date=trade_date, start=start)
+def shares_endpoint(api_client: BaseApiClient, start: int = 0) -> Union[dict, str]:
+    """Get shares from api"""
+    api_client.params['start'] = start
 
-    stock = get_url_data(url, params)
-
-    return json.loads(stock)
+    return api_client.execute_request()
 
 
 def get_shares(trade_date: str) -> tuple:
@@ -59,8 +37,13 @@ def get_shares(trade_date: str) -> tuple:
     page = 0
     history = dict()
 
+    url = f'{HOST}iss/history/engines/stock/markets/shares/boards/tqbr/securities{get_fmt("json")}'
+    params = dict(date=trade_date, start=page)
+
+    api_client = BaseApiClient(url, params)
+
     while True:
-        share = shares_endpoint(trade_date, 'json', page)
+        share = shares_endpoint(api_client, page)
         if not history:
             # first iteration
             history = share.get('history')
