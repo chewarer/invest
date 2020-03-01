@@ -12,7 +12,7 @@ db = DataBase()
 
 
 def get_mongo_connection():
-    """Mongo connection for usage from tasks"""
+    """Mongo connection for usage without app context"""
     task_db = DataBase()
     task_db.client = AsyncIOMotorClient(
         str(MONGODB_URL),
