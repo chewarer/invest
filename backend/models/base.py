@@ -26,7 +26,6 @@ class DateTimeModelMixin(BaseModel):
 
 class DBModelMixin(RWModel, DateTimeModelMixin):
     _id: str
-    board_id: str
 
     class Meta:
         collection: str = ''
@@ -37,8 +36,16 @@ class DBModelMixin(RWModel, DateTimeModelMixin):
 
     @classmethod
     async def find(cls, conn: AsyncIOMotorClient, q_filter: dict, limit: int = 10) -> list:
-        x = conn[cls.Meta.collection].find(q_filter)
-        return await x.to_list(limit)
+        result = conn[cls.Meta.collection].find(q_filter)
+        return await result.to_list(limit)
+
+    @classmethod
+    async def count(cls, conn: AsyncIOMotorClient, q_filter: dict) -> int:
+        return await conn[cls.Meta.collection].count_documents(q_filter)
+
+    @classmethod
+    async def exists(cls, conn: AsyncIOMotorClient, q_filter: dict) -> bool:
+        return bool(await cls.count(conn, q_filter))
 
     @classmethod
     async def insert_one(cls, conn: AsyncIOMotorClient, data: dict) -> str:
