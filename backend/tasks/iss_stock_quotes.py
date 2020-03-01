@@ -4,9 +4,13 @@
         https://www.moex.com/a2193
         http://iss.moex.com/iss/reference/
 """
+from datetime import datetime
 
-from typing import Union
+from pydantic import ValidationError
+
 from backend.scrappers.base import BaseApiClient
+from backend.mongodb import get_mongo_connection
+from backend.models.stock_quotes import StockQouteInDB
 
 
 HOST = 'https://iss.moex.com/'
@@ -22,7 +26,7 @@ def get_fmt(resp_format: str = 'json'):
     ).get(resp_format, '')
 
 
-def shares_endpoint(api_client: BaseApiClient, start: int = 0) -> Union[dict, str]:
+def shares_endpoint(api_client: BaseApiClient, start: int = 0) -> dict:
     """Get shares from api"""
     api_client.params['start'] = start
 
@@ -43,7 +47,7 @@ def get_shares(trade_date: str) -> tuple:
     api_client = BaseApiClient(url, params)
 
     while True:
-        share = shares_endpoint(api_client, page)
+        share: dict = shares_endpoint(api_client, page)
         if not history:
             # first iteration
             history = share.get('history')
@@ -70,3 +74,37 @@ def get_shares(trade_date: str) -> tuple:
     )
 
     return history_data
+
+
+async def main(trade_date: str):
+    """
+        Get stock quotes for specified date.
+        And save to DB.
+        :param: trade_date: format - '2020-12-31'
+    """
+
+    db = get_mongo_connection()
+    shares = get_shares(trade_date)
+
+    print(f'Received stocks: {len(shares)}')
+
+    for share in shares:
+        try:
+            stock = StockQouteInDB(
+                date=datetime.strptime(share['TRADEDATE'], '%Y-%m-%d'),
+                ticker_short_name=share['SECID'],
+                ticker=share['SHORTNAME'],
+                open_price=share['OPEN'],
+                close_price=share['CLOSE'],
+                low_price=share['LOW'],
+                high_price=share['HIGH'],
+                board_id=share['BOARDID'],
+                # TODO: Need to add these fields automatically
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+        except ValidationError as e:
+            print(f'Validation error. Ticker: {share["SHORTNAME"]}. {e}')
+            continue
+
+        await stock.insert_one(db, stock.dict())
