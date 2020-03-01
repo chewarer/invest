@@ -4,7 +4,7 @@
         https://www.moex.com/a2193
         http://iss.moex.com/iss/reference/
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from pydantic import ValidationError
 
@@ -74,6 +74,23 @@ def get_shares(trade_date: str) -> tuple:
     )
 
     return history_data
+
+
+async def get_shares_between(date_from: str, date_to: str):
+    """
+        Get shares between dates inclusive.
+        Date format: '2020-12-31'
+    """
+    fmt = '%Y-%m-%d'
+    date_from = datetime.strptime(date_from, fmt)
+    date_to = datetime.strptime(date_to, fmt)
+
+    days = date_to - date_from
+    days = days.days
+
+    for day in range(days + 1):
+        trade_date = date_from + timedelta(days=day)
+        await main(datetime.strftime(trade_date, fmt))
 
 
 async def main(trade_date: str):

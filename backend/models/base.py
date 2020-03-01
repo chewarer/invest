@@ -32,17 +32,17 @@ class DBModelMixin(RWModel, DateTimeModelMixin):
         collection: str = ''
 
     @classmethod
-    async def find_one(cls, conn: AsyncIOMotorClient, q_filter: dict):
+    async def find_one(cls, conn: AsyncIOMotorClient, q_filter: dict) -> dict:
         return await conn[cls.Meta.collection].find_one(q_filter)
 
     @classmethod
-    async def find(cls, conn: AsyncIOMotorClient, q_filter: dict, limit: int = 10):
+    async def find(cls, conn: AsyncIOMotorClient, q_filter: dict, limit: int = 10) -> list:
         x = conn[cls.Meta.collection].find(q_filter)
         return await x.to_list(limit)
 
     @classmethod
     async def insert_one(cls, conn: AsyncIOMotorClient, data: dict) -> str:
         # TODO: verify inserted data for unique fields values
-        result = conn[cls.Meta.collection].insert_one(data)
+        result = await conn[cls.Meta.collection].insert_one(data)
 
         return result
