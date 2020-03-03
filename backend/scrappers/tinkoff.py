@@ -1,51 +1,67 @@
+from datetime import datetime
+
 from dateutil.parser import parse
 
-from .base import BaseApiClient, BaseModel
+from .base import BaseApiClient
+from ..models.scrapers import TinkoffIdeaInDB
+from ..mongodb import get_mongo_connection
 
 
-class Idea(BaseModel):
-    """Idea item"""
-    def __init__(self, **kwargs):
-        self.id = kwargs.get('id')
-        self.source = 'tinkoff'
-        self.date_open = parse(kwargs.get('date_start'))
-        self.date_close = parse(kwargs.get('date_end'))
-        self.currency = kwargs.get('tickers', {})[0].get('currency')
-        self.open_price = kwargs.get('price_start', 0)
-        self.prognoze_profit_percent = kwargs.get('target_yield')
-        self.target_price = self.open_price + (self.open_price / 100 * self.prognoze_profit_percent)
-        self.prognoze_profit = self.target_price - self.open_price
-        self.title = kwargs.get('title')
-        self.ticker_short_name = kwargs.get('tickers', {})[0].get('name')
-        self.ticker = kwargs.get('tickers', {})[0].get('ticker')
-        self.body = kwargs.get('description')
-        self.status = 'open'
-        self.market = kwargs.get('market')
-        self.recommendation = 'Покупать'
-        self.author = kwargs.get('broker', {}).get('name')
-        self.accuracy = kwargs.get('broker', {}).get('accuracy')
-        self.origin_data = kwargs
-
-
-def parse_ideas():
+async def parse_ideas(limit: int = 20):
+    """
+        Get ideas from tinkoff.ru
+    """
     url = 'https://api-invest.tinkoff.ru/smartfeed-public/v1/feed/api/ideas'
     params = {
-        'limit': 100,
+        'limit': limit,
         'broker_id': 'all',
     }
-    ideas = []
+    count = 0
+    db = get_mongo_connection()
 
     api_client = BaseApiClient(url, params)
 
     response = api_client.execute_request()
-    if response:
-        ideas = response.get('payload', {}).get('ideas', {})
+    if not response:
+        print('No response')
+        return
 
-    i = []
+    ideas = response.get('payload', {}).get('ideas', {})
 
-    for _idea in ideas:
-        idea = Idea(**_idea)
-        idea.save()
-        i.append(idea)
+    for i in ideas:
+        _open_price = i.get('price_start', 0)
+        _prognoze_profit_percent = i.get('target_yield')
 
-    return i
+        idea = TinkoffIdeaInDB(
+            row_id=i.get('id'),
+            date_open=parse(i.get('date_start')),
+            date_close=parse(i.get('date_end')),
+            currency=i.get('tickers', {})[0].get('currency'),
+            open_price=_open_price,
+            prognoze_profit_percent=_prognoze_profit_percent,
+            target_price=round(_open_price + (_open_price / 100 * _prognoze_profit_percent), 2),
+            prognoze_profit=round((_open_price
+                                   + (_open_price / 100 * _prognoze_profit_percent)
+                                   - _open_price), 2),
+            title=i.get('title'),
+            ticker_short_name=i.get('tickers', {})[0].get('name'),
+            ticker=i.get('tickers', {})[0].get('ticker'),
+            body=i.get('description'),
+            market=i.get('market'),
+            author=i.get('broker', {}).get('name'),
+            accuracy=i.get('broker', {}).get('accuracy'),
+            origin_data=i,
+
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+
+        exists_record = await TinkoffIdeaInDB.exists(
+            db, {'row_id': idea.row_id, 'source': idea.source}
+        )
+
+        if not exists_record:
+            count += 1
+            await idea.insert_one(db, idea.dict())
+
+    print(f'Added: {count} new ideas')
