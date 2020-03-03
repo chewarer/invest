@@ -90,10 +90,10 @@ async def get_shares_between(date_from: str, date_to: str):
 
     for day in range(days + 1):
         trade_date = date_from + timedelta(days=day)
-        await main(datetime.strftime(trade_date, fmt))
+        await get_for_date(datetime.strftime(trade_date, fmt))
 
 
-async def main(trade_date: str):
+async def get_for_date(trade_date: str):
     """
         Get stock quotes for specified date.
         And save to DB.
@@ -101,6 +101,14 @@ async def main(trade_date: str):
     """
 
     db = get_mongo_connection()
+
+    exists_record = await StockQouteInDB.exists(
+        db, {'date': datetime.strptime(trade_date, '%Y-%m-%d'), 'board_id': 'TQBR'}
+    )
+    if exists_record:
+        print(f'Stock quotes for the date {trade_date} already exists')
+        return
+
     shares = get_shares(trade_date)
 
     print(f'Received stocks: {len(shares)}')
