@@ -36,8 +36,3 @@ class BaseApiClient:
             print(f'Error on url {self.endpoint}: {e}')
         else:
             return resp.json() if self.response_type == 'json' else resp.text
-
-
-class BaseModel:
-    def save(self):
-        pass

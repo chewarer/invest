@@ -1,53 +1,73 @@
 from datetime import datetime
 
-from .base import BaseApiClient, BaseModel
+from .base import BaseApiClient
+from ..models.scrapers import BksIdeaInDB
+from ..mongodb import get_mongo_connection
 
 
-class Idea(BaseModel):
-    """Idea item"""
-    def __init__(self, **kwargs):
-        self.id = kwargs.get('id')
-        self.source = 'bks'
-        self.date_open = datetime.fromtimestamp(kwargs.get('date_open'))
-        self.date_close = datetime.fromtimestamp(kwargs.get('date_close'))
-        self.currency = kwargs.get('currency')
-        self.open_price = kwargs.get('open_price', 0)
-        self.target_price = kwargs.get('target_price', 0)
-        self.prognoze_profit = self.target_price - self.open_price
-        self.prognoze_profit_percent = self.prognoze_profit * 100 / self.open_price
-        self.title = kwargs.get('title')
-        self.ticker_short_name = kwargs.get('ticker_short_name')
-        self.ticker = kwargs.get('secur_code')
-        self.body = kwargs.get('body')
-        self.status = kwargs.get('status')
-        self.market = kwargs.get('market')
-        self.recommendation = kwargs.get('recommendation')
-        self.author = kwargs.get('author')
-        self.author_type = kwargs.get('authorType')
-        self.origin_data = kwargs
-
-
-def parse_ideas():
+async def parse_ideas(limit: int = 20, offset: int = 0):
+    """
+        Get ideas from bks.ru
+    """
     url = 'https://api.bcs.ru/express_ideas/v2'
     params = {
-        'limit': 10,
-        'offset': 0,
+        'limit': limit,
+        'offset': offset,
         'sort': 'new',
-        'status': 'open',
+        # 'status': 'open',
     }
-    ideas = []
+    count = 0
+    db = get_mongo_connection()
 
     api_client = BaseApiClient(url, params)
 
     response = api_client.execute_request()
-    if response:
-        ideas = response.get('ideas')
+    if not response:
+        print('No response')
+        return
 
-    i = []
+    ideas = response.get('ideas')
 
-    for _idea in ideas:
-        idea = Idea(**_idea)
-        idea.save()
-        i.append(idea)
+    for i in ideas:
+        _open_price = i.get('open_price', 0)
+        _target_price = i.get('target_price', 0)
+        _prognoze_profit = _target_price - _open_price
 
-    return i
+        try:
+            idea = BksIdeaInDB(
+                row_id=i.get('id'),
+                source='bks',
+                date_open=datetime.fromtimestamp(i.get('date_open')),
+                date_close=datetime.fromtimestamp(i.get('date_close')),
+                currency=i.get('currency'),
+                open_price=_open_price,
+                target_price=_target_price,
+                prognoze_profit=_prognoze_profit,
+                prognoze_profit_percent=_prognoze_profit * 100 / _open_price,
+                title=i.get('title'),
+                ticker_short_name=i.get('ticker_short_name'),
+                ticker=i.get('secur_code'),
+                body=i.get('body'),
+                status=i.get('status'),
+                market=i.get('market'),
+                recommendation=i.get('recommendation'),
+                author=i.get('author'),
+                author_type=i.get('authorType'),
+                origin_data=i,
+
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+        except Exception as e:
+            print(e)
+            continue
+
+        exists_record = await BksIdeaInDB.exists(
+            db, {'row_id': idea.row_id, 'source': idea.source}
+        )
+
+        if not exists_record:
+            count += 1
+            await idea.insert_one(db, idea.dict())
+
+    print(f'Added: {count} new ideas')
