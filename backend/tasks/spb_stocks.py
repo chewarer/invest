@@ -3,28 +3,16 @@
 """
 
 from datetime import datetime
+from typing import Union
+
 import requests
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup as bs
 from bs4.element import NavigableString
 
 from ..scrappers.base import BaseApiClient
 from ..models.scrapers import BksIdeaInDB
 from ..mongodb import get_mongo_connection
-
-# data = {
-#   'ctl00$ScriptManager1': 'ctl00$BXContent$up|ctl00$BXContent$pager$ctl00$ctl01',
-#   '__EVENTTARGET': 'ctl00$BXContent$pager$ctl00$ctl01',
-#   'bxValidationToken': 'b369f92935d137c3644d9c0a28b2112e',
-#   '__VIEWSTATE': '/wEPDwULLTE2NzEyMDU5NjlkGAcFFWN0bDAwJEJYQ29udGVudCRwYWdlcg8UKwAEZGQCHgLoCWQFFWN0bDAwJEJYQ29udGVudCRjdGwwMg88KwAMAQgCAWQFFWN0bDAwJEJYQ29udGVudCRsdk1zZQ88KwAOAwhmDGYNAv////8PZAUVY3RsMDAkQlhDb250ZW50JGN0bDAxDzwrAAwBCGZkBRljdGwwMCRCWENvbnRlbnQkTGlzdFZpZXcxDxQrAA5kZGRkZGRkPCsAHgAC6AlkZGRmAh5kBRljdGwwMCRCWENvbnRlbnQkTGlzdFZpZXcyDxQrAA5kZGRkZGRkPCsAHwACH2RkZGYC/////w9kBR5fX0NvbnRyb2xzUmVxdWlyZVBvc3RCYWNrS2V5X18WAQUxY3RsMDAkc2VhcmNoZm9ybTEkc2VhcmNoZm9ybTEkc2VhcmNoZm9ybTEkYnRuU3JjaNCIVaDH4UmZvhm8YpatPnjP6ZEg',
-#   '__EVENTVALIDATION': '/wEdAAguskZwOrUmMQPbniw/ApDffFsezz3GuGexXlwRGdGgE4jhaSetPRJbd7PpVxUwh7ErMztzIdeECOB8HduAT+aYatv6ulkbHiqn5jKmgpRD5KweYQs9CvY1lKV7PUZ5lQrBdyzUeOwNGqXC2OIcx2DgVlbSndBZ/D440pzDsjQwUDHI/ms5bhT0KNuiyNRpr08z+K1Z',
-#
-#   # 'bitrix_include_areas': 'N',
-#   # '__EVENTARGUMENT': '',
-#   # 'ctl00$searchform1$searchform1$searchform1$query': '\u041F\u043E\u0438\u0441\u043A...',
-#   # '__VIEWSTATEGENERATOR': '1E76840D',
-#   # '__ASYNCPOST': 'true',
-# }
 
 
 def get_shares(trade_date: str) -> tuple:
@@ -44,105 +32,145 @@ async def get_shares_between(date_from: str, date_to: str):
     fmt = '%Y-%m-%d'
 
 
-def get_for_date(trade_date: str):
+class SPBparser:
     """
-        Get stock quotes for specified date.
-        And save to DB.
-        :param: trade_date: format - '2020.12.31'
+        PArse data from SPB stock securities
     """
-
-    # db = get_mongo_connection()
-
-    url = 'https://spbexchange.ru/ru/market-data/totalsArch.aspx'
-
-    params = (
-        ('date', trade_date),
-    )
-
-    init_page = requests.get(url, params, verify=False)
-
-    if init_page.status_code != 200:
-        print(f'Wrong response: f{init_page.status_code}')
-        return
-
-    html = BeautifulSoup(init_page.text)
-
-    bx_validation_token = html.find('input', {"name":"bxValidationToken"}).get('value')
-    viewstate = html.select_one('#__VIEWSTATE').get('value')
-    event_validation = html.select_one('#__EVENTVALIDATION').get('value')
-    view_state_generator = html.select_one('#__VIEWSTATEGENERATOR').get('value')
-
-    cookies = dict(init_page.cookies)
+    HOST = 'https://spbexchange.ru/'
+    url = f'{HOST}ru/market-data/totalsArch.aspx'
 
     headers = {
-        'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:73.0) Gecko/20100101 Firefox/73.0',
+        'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:73.0) '
+                      'Gecko/20100101 Firefox/73.0',
         'Accept': '*/*',
         'Accept-Language': 'en-US,en;q=0.5',
         'X-Requested-With': 'XMLHttpRequest',
         'X-MicrosoftAjax': 'Delta=true',
         'Cache-Control': 'no-cache',
         'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
-        'Origin': 'https://spbexchange.ru',
+        'Origin': f'{HOST}',
         'DNT': '1',
         'Connection': 'keep-alive',
         'Pragma': 'no-cache',
     }
 
-    htmls = []
+    def __init__(self, trade_date: str):
+        self.page = 0
+        self.trade_date = trade_date
+        self.cookies = {}
+        self.request_data = {}
+        self.params = (
+            ('date', trade_date),
+        )
+        self.data = {}
+        self.html: bs = ...
+
+    def get_init_page(self) -> Union[bs, bool]:
+        """
+            Get start page with stock quotes
+        """
+        init_page = requests.get(self.url, self.params, verify=False)
+
+        if init_page.status_code != 200:
+            print(f'Wrong response: f{init_page.status_code}')
+            return False
+
+        self.page += 1
+        self.cookies = dict(init_page.cookies)
+
+        html = self.read_html(init_page.text)
+        self.html = html
+
+        self.data = {
+            'bxValidationToken': html.find('input', {"name": "bxValidationToken"}).get('value'),
+            '__VIEWSTATE': html.select_one('#__VIEWSTATE').get('value'),
+            '__EVENTVALIDATION': html.select_one('#__EVENTVALIDATION').get('value'),
+            '__VIEWSTATEGENERATOR': html.select_one('#__VIEWSTATEGENERATOR').get('value'),
+        }
+
+        return html
+
+    @staticmethod
+    def read_html(raw_html):
+        return bs(raw_html, 'html.parser')
+
+    def get_pager_links(self) -> [dict, bool]:
+        """
+            Return pager links
+        """
+        pager_element = self.html.select('#ctl00_BXContent_pager a')
+        pager_links = {
+            item.text: item['href'].split("'")[1]
+            for item in pager_element
+            if not item['href'].split("'")[1].endswith('$ctl00')
+        }
+
+        is_last_pager = '...' in pager_links.keys()
+
+        return pager_links, is_last_pager
+
+    def update_request_data(self, page: str):
+        raw_string = self.html.contents[-1]
+        if isinstance(raw_string, NavigableString):
+            el = raw_string.split('|')
+            if '__VIEWSTATE' in el:
+                self.data['__VIEWSTATE'] = el[el.index('__VIEWSTATE') + 1]
+
+            if '__EVENTVALIDATION' in el:
+                self.data['__EVENTVALIDATION'] = el[el.index('__EVENTVALIDATION') + 1]
+
+        self.data['ctl00$ScriptManager1'] = f'ctl00$BXContent$up|{page}'
+        self.data['__EVENTTARGET'] = page
+
+    def get_next_page(self) -> Union[bs, bool]:
+        """
+            Get page by new parameters
+        """
+        response = requests.post(
+            self.url,
+            headers=self.headers,
+            params=self.params,
+            cookies=self.cookies,
+            data=self.data,
+            verify=False,
+        )
+
+        if response.status_code != 200:
+            print(f'Wrong response: {response.status_code}')
+            return False
+
+        self.html = self.read_html(response.text)
+        self.page += 1
+
+        return self.html
+
+
+class HTMLParser:
+    """
+        Parse HTML with stocks quotes
+    """
+
+
+def get_for_date(trade_date: str):
+    """
+        Get stock quotes for specified date.
+        And save to DB.
+        :param: trade_date: format - '2020.12.31'
+    """
+    parser = SPBparser(trade_date=trade_date)
+    htmls = list()
     is_last_pager = False
 
-    for i in range(100):
-        if is_last_pager:
-            break
+    html = parser.get_init_page()
+    htmls.append(html)
 
-        pager_links = [
-            (item.text, item['href'].split("'")[1])
-            for item in html.select('#ctl00_BXContent_pager a')
-        ]
-
-        if i != 0:
-            is_last_pager = len([x[0] for x in pager_links if x[0] == '...']) < 2
-
+    while not is_last_pager:
+        pager_links, is_last_pager = parser.get_pager_links()
         print('** New pager block', pager_links)
 
-        for page_name, page in pager_links:
-            if page_name == '...' and page.endswith('$ctl00'):
-                continue
-
-            raw_srtring = html.select_one('body').contents[-1]
-            if isinstance(raw_srtring, NavigableString):
-                el = raw_srtring.split('|')
-                if '__VIEWSTATE' in el:
-                    viewstate = el[el.index('__VIEWSTATE') + 1]
-
-                if '__EVENTVALIDATION' in el:
-                    event_validation = el[el.index('__EVENTVALIDATION') + 1]
-
-            data = {
-                'ctl00$ScriptManager1': f'ctl00$BXContent$up|{page}',
-                '__EVENTTARGET': page,
-                'bxValidationToken': bx_validation_token,
-                '__VIEWSTATE': viewstate,
-                '__EVENTVALIDATION': event_validation,
-                '__VIEWSTATEGENERATOR': view_state_generator,
-            }
-
-            response = requests.post(
-                url,
-                headers=headers,
-                params=params,
-                cookies=cookies,
-                data=data,
-                verify=False,
-            )
-
-            if response.status_code != 200:
-                print(f'Wrong response: {response.status_code}')
-                return
-
-            html = BeautifulSoup(response.text)
+        for page_name, page in pager_links.items():
+            parser.update_request_data(page)
+            html = parser.get_next_page()
             htmls.append(html)
 
-
-def bypass_pages(url: str, pager: list) -> list:
-    """"""
+    return htmls
