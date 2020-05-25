@@ -11,13 +11,13 @@ class BaseApiClient:
     """
         API client. Get request to API endpoint.
     """
-    def __init__(self, endpoint: str, params: dict):
+    def __init__(self, endpoint: str, params: dict = None, response_type: str = 'json'):
         self.endpoint = endpoint
-        self.params = params
+        self.params = params or {}
         self.headers = {
             'User-Agent': generate_user_agent(device_type="desktop", os=('mac', 'linux'))
         }
-        self.response_type = 'json'
+        self.response_type = response_type
 
     @repeater()
     def execute_request(self) -> Union[dict, str]:

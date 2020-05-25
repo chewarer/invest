@@ -2,34 +2,17 @@
     Parser for stock quotes from SPB.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Union
 
 import requests
 
 from bs4 import BeautifulSoup as bs
 from bs4.element import NavigableString
+from pydantic import ValidationError
 
-from ..scrappers.base import BaseApiClient
-from ..models.scrapers import BksIdeaInDB
+from backend.models.stock_quotes import SPBStockQouteInDB
 from ..mongodb import get_mongo_connection
-
-
-def get_shares(trade_date: str) -> tuple:
-    """
-        Get stock quotes for specified date.
-        :param: trade_date: format - '2020.12.31'
-    """
-    page = 0
-    url = f'https://spbexchange.ru/ru/market-data/totalsArch.aspx?date={trade_date}#EQF'
-
-
-async def get_shares_between(date_from: str, date_to: str):
-    """
-        Get shares between dates inclusive.
-        Date format: '2020-12-31'
-    """
-    fmt = '%Y-%m-%d'
 
 
 class SPBparser:
@@ -105,7 +88,7 @@ class SPBparser:
             if not item['href'].split("'")[1].endswith('$ctl00')
         }
 
-        is_last_pager = '...' in pager_links.keys()
+        is_last_pager = '...' not in pager_links.keys()
 
         return pager_links, is_last_pager
 
@@ -149,9 +132,43 @@ class HTMLParser:
     """
         Parse HTML with stocks quotes
     """
+    def __init__(self, html: bs):
+        self.html = html
+
+    def parse_html(self) -> list:
+        rows = self.html.select('body #ctl00_BXContent_up table tr') or self.html.select('table tr')
+        if not rows:
+            return []
+        rows = rows[2:]
+
+        result = list()
+
+        for row in rows:
+            columns = [col.text.strip() for col in row.select('td')]
+            close_price = float(columns[7].replace(',', '.'))
+            try:
+                close_price_delta = float(columns[8].replace('%', '').replace(',', '.').strip())
+            except ValueError as e:
+                close_price_delta = 0
+                print(f'wrong row: {columns[8]}. Error: {e}')
+            open_price = (close_price * 100) / (100+close_price_delta)
+
+                'ticker_short_name': columns[0],
+            result.append({
+                'ticker': columns[1],
+                'currency': columns[2],
+                'low_price': columns[4].replace(',', '.'),
+                'high_price': columns[5].replace(',', '.'),
+                'open_price': open_price,
+                'close_price': close_price,
+                'market_price': columns[10].replace(',', '.'),
+                'trading_volume': columns[13].replace(',', '.'),
+            })
+
+        return result
 
 
-def get_for_date(trade_date: str):
+def get_shares(trade_date: str) -> list:
     """
         Get stock quotes for specified date.
         And save to DB.
@@ -173,4 +190,72 @@ def get_for_date(trade_date: str):
             html = parser.get_next_page()
             htmls.append(html)
 
-    return htmls
+    stocks = list()
+
+    for html in htmls:
+        parser = HTMLParser(html)
+        stocks.extend(parser.parse_html())
+
+    return stocks
+
+
+async def get_for_date(trade_date: str):
+    """
+        Get stock quotes for specified date.
+        And save to DB.
+        :param: trade_date: format - '2020.12.31'
+    """
+    fmt = '%Y.%m.%d'
+    db = get_mongo_connection()
+
+    exists_record = await SPBStockQouteInDB.exists(
+        db, {'date': datetime.strptime(trade_date, fmt), 'board_id': 'SPB'}
+    )
+    if exists_record:
+        print(f'Stock quotes for the date {trade_date} already exists')
+        return
+
+    shares = get_shares(trade_date)
+
+    print(f'Received stocks: {len(shares)}')
+
+    for share in shares:
+        try:
+            stock = SPBStockQouteInDB(
+                date=datetime.strptime(trade_date, fmt),
+                # ticker_short_name=share['ticker_short_name'],
+                # ticker=share['ticker'],
+                # open_price=share['open_price'],
+                # close_price=share['close_price'],
+                # low_price=share['low_price'],
+                # high_price=share['high_price'],
+                # market_price=share['market_price'],
+                # trading_volume=share['trading_volume'],
+                # currency=share['currency'],
+                **share,
+                # TODO: Need to add these fields automatically
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+        except ValidationError as e:
+            print(f'Validation error. Ticker: {share["ticker_short_name"]}. {e}')
+            continue
+
+        # await stock.insert_one(db, stock.dict())
+
+
+async def get_shares_between(date_from: str, date_to: str):
+    """
+        Get shares between dates inclusive.
+        Date format: '2020-12-31'
+    """
+    fmt = '%Y-%m-%d'
+    date_from = datetime.strptime(date_from, fmt)
+    date_to = datetime.strptime(date_to, fmt)
+
+    days = date_to - date_from
+    days = days.days
+
+    for day in range(days + 1):
+        trade_date = date_from + timedelta(days=day)
+        await get_for_date(datetime.strftime(trade_date, fmt))

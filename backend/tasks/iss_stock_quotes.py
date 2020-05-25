@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from backend.scrappers.base import BaseApiClient
 from backend.mongodb import get_mongo_connection
-from backend.models.stock_quotes import StockQouteInDB
+from backend.models.stock_quotes import IssStockQouteInDB
 
 
 HOST = 'https://iss.moex.com/'
@@ -102,7 +102,7 @@ async def get_for_date(trade_date: str):
 
     db = get_mongo_connection()
 
-    exists_record = await StockQouteInDB.exists(
+    exists_record = await IssStockQouteInDB.exists(
         db, {'date': datetime.strptime(trade_date, '%Y-%m-%d'), 'board_id': 'TQBR'}
     )
     if exists_record:
@@ -115,7 +115,7 @@ async def get_for_date(trade_date: str):
 
     for share in shares:
         try:
-            stock = StockQouteInDB(
+            stock = IssStockQouteInDB(
                 date=datetime.strptime(share['TRADEDATE'], '%Y-%m-%d'),
                 ticker_short_name=share['SECID'],
                 ticker=share['SHORTNAME'],
