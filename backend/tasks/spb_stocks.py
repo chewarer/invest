@@ -153,7 +153,7 @@ class HTMLParser:
                 print(f'wrong row: {columns[8]}. Error: {e}')
             open_price = (close_price * 100) / (100+close_price_delta)
 
-                'ticker_short_name': columns[0],
+                # 'ticker_short_name': columns[0],
             result.append({
                 'ticker': columns[1],
                 'currency': columns[2],

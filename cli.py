@@ -40,6 +40,16 @@ async def get_stocks(date):
     await get_for_date(date)
 
 
+@group_stocks.command()
+@coro
+@click.option('-f', '--date_from', default='2020-12-31', type=str, help='Start date')
+@click.option('-t', '--date_to', default='2020-12-31', type=str, help='End date')
+async def get_stocks_between(date_from, date_to):
+    """Get stock quotes from Moscow Exchange ISS server between dates"""
+    from backend.tasks.iss_stock_quotes import get_shares_between
+    await get_shares_between(date_from=date_from, date_to=date_to)
+
+
 @group_ideas.command()
 @coro
 @click.option('-l', '--limit', default=20, type=int, help='Limit for parse')
