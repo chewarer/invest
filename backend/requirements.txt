@@ -30,7 +30,7 @@ Pygments==2.5.2
 pymongo==3.10.0
 python-dateutil==2.8.1
 pytz==2020.5
-PyYAML==5.2
+PyYAML==5.4
 requests==2.25.1
 scv==2.0.0
 six==1.15.0
