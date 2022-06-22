@@ -18,7 +18,7 @@ jedi==0.15.1
 lxml==4.6.5
 motor==2.1.0
 multitasking==0.0.9
-numpy==1.21.0
+numpy==1.22.0
 pandas==1.2.0
 parso==0.5.1
 pexpect==4.7.0
