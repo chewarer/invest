@@ -31,7 +31,7 @@ pymongo==3.10.0
 python-dateutil==2.8.1
 pytz==2020.5
 PyYAML==5.4
-requests==2.25.1
+requests==2.31.0
 scv==2.0.0
 six==1.15.0
 soupsieve==1.9.5
